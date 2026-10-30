@@ -1,15 +1,47 @@
 export const platforms = {
-    dm: { name: "大麦", subtitle: "演唱会 · 音乐节 · 现场演出", mark: "麦", color: "#087f6d", home: "https://m.damai.cn", orders: "https://orders.damai.cn/orderList" },
-    bilibili: { name: "Bilibili", subtitle: "会员购 · 漫展 · 演出活动", mark: "哔", color: "#db638b", home: "https://show.bilibili.com", orders: "https://show.bilibili.com/platform/orderList.html" },
+    dm: { name: "大麦", subtitle: "演唱会 · 音乐节 · 现场演出", mark: "麦", color: "#087f6d", home: "https://m.damai.cn", orders: "https://orders.damai.cn/orderList", cookieHint: "大麦请使用 H5 页面，Cookie 需要包含 _m_h5_tk。" },
+    bilibili: { name: "Bilibili", subtitle: "会员购 · 漫展 · 演出活动", mark: "哔", color: "#db638b", home: "https://show.bilibili.com", orders: "https://show.bilibili.com/platform/orderList.html", cookieHint: "Bilibili Cookie 需要包含 SESSDATA 和 bili_jct。" },
+    motianlun: {
+        name: "摩天轮",
+        subtitle: "演出票务 · MoreTickets",
+        mark: "轮",
+        color: "#b86a12",
+        home: "https://www.motianlun.cn",
+        orders: "https://www.moretickets.com/my-order",
+        cookieHint: "在 moretickets.com 或摩天轮 H5 已登录页面打开 Network，复制请求头里的 access_token（网页）或 access-token（App 内网页）。如果同时有 tsessionid，一并复制。按 access_token=粘贴的值; tsessionid=粘贴的值 保存。不要粘贴整段换行。",
+        linkHint: "支持 24 位 showId、motianlun.cn/content/编号，以及 moretickets.com / tourDetail?showId= 链接。",
+    },
 };
+
+export const platformFilters = [{ id: "all", name: "全部平台" }, ...Object.entries(platforms).map(([id, meta]) => ({ id, name: meta.name }))];
+
+const SHOW_ID = /^[a-f0-9]{24}$/i;
+
+function hostMatches(hostname, domain) {
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+}
 
 export function projectId(input, platform) {
     const text = String(input || "").trim();
+    if (platform === "motianlun") {
+        if (SHOW_ID.test(text)) return text.toLowerCase();
+        try {
+            const url = new URL(text);
+            if (url.protocol !== "https:" || !(hostMatches(url.hostname, "motianlun.cn") || hostMatches(url.hostname, "moretickets.com"))) return "";
+            for (const key of ["showId", "showOID", "showCode", "id"]) {
+                const value = url.searchParams.get(key) || "";
+                if (SHOW_ID.test(value)) return value.toLowerCase();
+            }
+            const last = url.pathname.split("/").filter(Boolean).at(-1) || "";
+            if (SHOW_ID.test(last)) return last.toLowerCase();
+        } catch { /* 输入完成后统一校验 */ }
+        return "";
+    }
     if (/^[1-9]\d*$/.test(text)) return text;
     try {
         const url = new URL(text);
         const domain = platform === "dm" ? "damai.cn" : "bilibili.com";
-        if (url.protocol !== "https:" || !(url.hostname === domain || url.hostname.endsWith(`.${domain}`))) return "";
+        if (url.protocol !== "https:" || !hostMatches(url.hostname, domain)) return "";
         const keys = platform === "dm" ? ["itemId"] : ["id", "project_id", "projectId", "itemsId"];
         for (const key of keys) {
             const value = url.searchParams.get(key);
@@ -116,6 +148,69 @@ export function normalizeDamai(raw, id) {
             status: group.performBaseTagDesc || "", tickets: [],
         }))),
     };
+}
+
+const closedSession = new Set(["CLOSE", "PENDING", "NO_INVENTORY"]);
+
+export function normalizeMotianlun(raw, id) {
+    const show = raw?.show || {};
+    const sessions = Array.isArray(raw?.sessions) ? raw.sessions : [];
+    return {
+        id: String(show.id || id),
+        name: show.showName || "摩天轮演出",
+        venue: [show.cityName, show.venueName].filter(Boolean).join(" · "),
+        image: String(show.posterUrl || "").replace(/^http:/, "https:"),
+        saleStart: 0,
+        dates: [],
+        note: raw?.note || "",
+        screens: sessions.map(session => {
+            const status = session.sessionStatusDesc || session.sessionStatus || "";
+            const disabled = session.hasTicket === false || closedSession.has(session.sessionStatus);
+            return {
+                id: String(session.sessionId || ""),
+                name: session.sessionName || [session.dateItem?.year, session.dateItem?.month, session.dateItem?.dayOfMonth, session.dateItem?.time].filter(Boolean).join(" "),
+                status,
+                disabled,
+                disabledReason: disabled ? (status || "暂不可购") : "",
+                limit: Number(session.purchaseLimit || 6),
+                tickets: [],
+            };
+        }).filter(screen => screen.id),
+    };
+}
+
+export function normalizeMotianlunTickets(raw, sessionLimit = 20) {
+    const list = Array.isArray(raw) ? raw : [];
+    return list.map(item => {
+        const stock = Number(item.stock);
+        const knownStock = Number.isFinite(stock) && stock >= 0;
+        const disabled = knownStock && stock === 0;
+        const limit = Math.max(1, Math.min(Number(sessionLimit) || 20, knownStock && stock > 0 ? stock : 20, 20));
+        const name = [item.mtsCategoryName, item.mtsSectionName, item.rowName, item.seatInfo].filter(Boolean).join(" · ") || "在售库存";
+        return {
+            id: String(item.inventoryId || ""),
+            name,
+            price: Math.round(Number(item.originPrice || item.discountPrice || 0) * 100),
+            currency: item.currencySymbol || "¥",
+            limit,
+            status: disabled ? "无库存" : (knownStock ? `库存 ${stock}` : item.stockTypeDesc || ""),
+            disabled,
+            disabledReason: disabled ? "无库存" : "",
+            listing: {
+                rowName: item.rowName || "",
+                rowNum: item.rowNum ?? null,
+                firstSeat: item.firstSeat ?? null,
+                lastSeat: item.lastSeat ?? null,
+                firstNum: item.firstNum ?? null,
+                lastNum: item.lastNum ?? null,
+                mtsZoneId: item.mtsZoneId || "",
+                mtsCategoryId: item.mtsCategoryId || "",
+                mtsSectionId: item.mtsSectionId || "",
+                mtsZoneRsId: item.mtsZoneRsId || "",
+                originPrice: item.originPrice == null ? "" : String(item.originPrice),
+            },
+        };
+    }).filter(ticket => ticket.id);
 }
 
 export function normalizeDamaiTickets(raw) {

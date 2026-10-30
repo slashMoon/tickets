@@ -3,6 +3,7 @@ defineProps({ name: { type: String, default: "ticket" } });
 const paths = {
     ticket: 'M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6V4Zm11 0v3m0 4v2m0 4v3',
     bilibili: 'M8 3l2 3m6-3-2 3M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm3 5v3m8-3v3m-6 3h4',
+    wheel: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0v18M3 12h18M6.2 6.2l11.6 11.6M17.8 6.2 6.2 17.8M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
     activity: 'M3 12h4l3-8 4 16 3-8h4',
     settings: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-6v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
     chevron: 'm9 5 7 7-7 7',

@@ -1,5 +1,5 @@
 use crate::{
-    bilibili, clock, dm, monitor,
+    bilibili, clock, dm, monitor, motianlun,
     notifications::{self, WechatConfig},
 };
 use serde::{Deserialize, Serialize};
@@ -213,6 +213,7 @@ fn validate(request: &TaskRequest) -> Result<(), String> {
     match request.platform.as_str() {
         "dm" => dm::validate(&request.config),
         "bilibili" => bilibili::validate(&request.config),
+        "motianlun" => motianlun::validate(&request.config),
         _ => Err("不支持的购票平台".into()),
     }
 }
@@ -360,10 +361,10 @@ where
     let result = match config {
         Ok(config) => match config.validate() {
             Ok(()) => {
-                let platform = if request.platform == "dm" {
-                    "大麦"
-                } else {
-                    "哔哩哔哩会员购"
+                let platform = match request.platform.as_str() {
+                    "dm" => "大麦",
+                    "motianlun" => "摩天轮",
+                    _ => "哔哩哔哩会员购",
                 };
                 let url = outcome.order_url.clone().unwrap_or_else(|| {
                     if monitoring {
@@ -442,7 +443,9 @@ pub fn start_ticket_task(
             context.report("running", "开始执行购票任务", 0, None);
             match context.request.platform.as_str() {
                 "dm" => dm::run(&context).await,
-                _ => bilibili::run(&context).await,
+                "motianlun" => motianlun::run(&context).await,
+                "bilibili" => bilibili::run(&context).await,
+                _ => Err("不支持的购票平台".into()),
             }
         };
         let outcome =
@@ -515,10 +518,10 @@ pub fn start_ticket_task(
 }
 
 pub fn order_list_url(platform: &str) -> &'static str {
-    if platform == "dm" {
-        "https://orders.damai.cn/orderList"
-    } else {
-        "https://show.bilibili.com/platform/orderList.html"
+    match platform {
+        "dm" => "https://orders.damai.cn/orderList",
+        "motianlun" => motianlun::orders_url(),
+        _ => "https://show.bilibili.com/platform/orderList.html",
     }
 }
 

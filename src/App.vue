@@ -9,6 +9,7 @@ const version = appVersion;
 const navigation = [
     { path: "/dm", label: "大麦", detail: "现场演出", icon: "ticket", platform: "dm" },
     { path: "/bilibili", label: "Bilibili", detail: "会员购", icon: "bilibili", platform: "bilibili" },
+    { path: "/motianlun", label: "摩天轮", detail: "演出票务", icon: "wheel", platform: "motianlun" },
 ];
 onMounted(() => initializeRuntime().catch(error => Message.error(errorText(error))));
 </script>
@@ -22,7 +23,7 @@ onMounted(() => initializeRuntime().catch(error => Message.error(errorText(error
             </router-link>
             <div class="nav-label">购票工作台</div>
             <nav class="platform-nav" aria-label="购票平台">
-                <router-link v-for="item in navigation" :key="item.path" :to="item.path" class="nav-item" :class="{ selected: route.path === item.path, pink: item.platform === 'bilibili' }">
+                <router-link v-for="item in navigation" :key="item.path" :to="item.path" class="nav-item" :class="{ selected: route.path === item.path, pink: item.platform === 'bilibili', amber: item.platform === 'motianlun' }">
                     <UiIcon :name="item.icon" />
                     <span>{{ item.label }}<small>{{ item.detail }}</small></span>
                     <span v-if="activeTasks.some(task => task.platform === item.platform && task.mode !== 'monitor')" class="live-dot" aria-label="任务运行中"></span>

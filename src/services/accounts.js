@@ -1,5 +1,12 @@
 export const accountStorageKey = "tickets.accounts";
+export const accountPlatforms = ["dm", "bilibili", "motianlun"];
 export const emptyAccounts = () => ({ items: [], defaults: {} });
+
+const platformName = platform => ({ dm: "大麦", bilibili: "Bilibili", motianlun: "摩天轮" }[platform] || platform);
+
+function cookieHas(cookie, key) {
+    return cookie.split(";").some(pair => pair.trim().startsWith(`${key}=`) && pair.trim().length > key.length + 1);
+}
 
 export function cleanAccountDraft(value) {
     const { cookie, remember, ...draft } = value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -7,11 +14,14 @@ export function cleanAccountDraft(value) {
 }
 
 export function validateAccount(input) {
-    if (!["dm", "bilibili"].includes(input.platform)) throw new Error("请选择大麦或 Bilibili 平台");
+    if (!accountPlatforms.includes(input.platform)) throw new Error("请选择大麦、Bilibili 或摩天轮平台");
     if (!input.name?.trim() || input.name.trim().length > 60) throw new Error("账号名称须为 1–60 个字符");
     if (typeof input.cookie !== "string" || !input.cookie.trim()) throw new Error("请填写 Cookie");
     if (/[\x00-\x1f\x7f]/.test(input.cookie) || input.cookie.length > 32768) throw new Error("Cookie 不能包含换行、控制字符，且不能超过 32 KB");
     if (!input.cookie.split(';').some(pair => /^[^=\s;]+=.*/.test(pair.trim()))) throw new Error("请粘贴请求头中完整的 Cookie 内容");
+    if (input.platform === "motianlun" && !cookieHas(input.cookie, "access_token") && !cookieHas(input.cookie, "access-token")) {
+        throw new Error("摩天轮 Cookie 需要包含 access_token 或 access-token");
+    }
 }
 
 export function upsertAccount(state, input, createId = () => crypto.randomUUID(), now = Date.now()) {
@@ -29,7 +39,7 @@ export function upsertAccount(state, input, createId = () => crypto.randomUUID()
 export function removeAccount(state, id) {
     const items = state.items.filter(item => item.id !== id);
     const defaults = { ...state.defaults };
-    for (const platform of ["dm", "bilibili"]) {
+    for (const platform of accountPlatforms) {
         if (defaults[platform] === id) defaults[platform] = items.find(item => item.platform === platform)?.id || "";
     }
     return { items, defaults };
@@ -51,10 +61,10 @@ export function loadAccounts(storage, createId = () => crypto.randomUUID(), now 
     const raw = storage.getItem(accountStorageKey);
     let state = raw === null ? emptyAccounts() : JSON.parse(raw);
     if (!state || !Array.isArray(state.items) || !state.defaults || typeof state.defaults !== "object"
-        || state.items.some(item => !item || typeof item.id !== "string" || !item.id || !["dm", "bilibili"].includes(item.platform) || typeof item.cookie !== "string" || typeof item.name !== "string")
+        || state.items.some(item => !item || typeof item.id !== "string" || !item.id || !accountPlatforms.includes(item.platform) || typeof item.cookie !== "string" || typeof item.name !== "string")
         || new Set(state.items.map(item => item.id)).size !== state.items.length) throw new Error("账号存储格式无效");
     const updates = [];
-    for (const platform of ["dm", "bilibili"]) {
+    for (const platform of accountPlatforms) {
         for (const prefix of ["tickets.draft", "tickets.monitor-draft"]) {
             const key = `${prefix}.${platform}`;
             const draftRaw = storage.getItem(key);
@@ -68,7 +78,7 @@ export function loadAccounts(storage, createId = () => crypto.randomUUID(), now 
                 const cookie = legacy.cookie.trim();
                 let account = state.items.find(item => item.platform === platform && item.cookie === cookie);
                 if (!account) {
-                    account = { id: createId(), platform, name: `${platform === "dm" ? "大麦" : "Bilibili"}${prefix.includes("monitor") ? "监控" : "购票"}账号（已迁入）`, cookie, updatedAt: now };
+                    account = { id: createId(), platform, name: `${platformName(platform)}${prefix.includes("monitor") ? "监控" : "购票"}账号（已迁入）`, cookie, updatedAt: now };
                     state = { items: [...state.items, account], defaults: { ...state.defaults, [platform]: state.defaults[platform] || account.id } };
                 }
                 draft.accountId = account.id;

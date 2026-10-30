@@ -46,6 +46,7 @@ function makeDefault(id) {
             <div class="field space-top"><label class="field-label" for="account-name">账号名称</label><input id="account-name" class="text-input" v-model="form.name" maxlength="60" placeholder="例如：我的常用账号" autocomplete="off" /></div>
             <div class="label-row space-top"><label class="field-label" for="account-cookie">账号 Cookie</label><button type="button" class="text-button" @click="showCookie = !showCookie">{{ showCookie ? '隐藏' : '显示' }}</button></div>
             <textarea id="account-cookie" class="text-input cookie-input" :class="{ concealed: !showCookie }" rows="4" v-model="form.cookie" placeholder="粘贴已登录账号的完整 Cookie" autocomplete="off" spellcheck="false"></textarea>
+            <p class="field-hint">{{ platforms[platform].cookieHint }}</p>
             <p class="field-hint">Cookie 以明文保存在当前设备的统一账号库中。账号单独保存，无需再点击页面顶部的保存设置。保存只检查格式，登录是否有效以平台查询结果为准。</p>
             <p class="field-hint">更新或删除账号后，已启动的任务继续使用启动时的 Cookie；新查询和新任务使用当前账号。Cookie 过期时，在这里更新一次即可。</p>
             <p v-if="error" class="inline-error" role="alert">{{ error }}</p>

@@ -50,7 +50,7 @@ export function errorText(error) { return error instanceof Error ? error.message
 export async function openExternal(url) {
     try {
         const parsed = new URL(url);
-        const allowed = ["damai.cn", "bilibili.com", "github.com"];
+        const allowed = ["damai.cn", "bilibili.com", "motianlun.cn", "moretickets.com", "github.com"];
         if (parsed.protocol !== "https:" || !allowed.some(host => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) throw new Error("无效的外部链接");
         if (desktop) await open(parsed.href);
         else window.open(parsed.href, "_blank", "noopener,noreferrer");

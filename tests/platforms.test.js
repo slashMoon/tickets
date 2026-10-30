@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectId, timestamp, beijingInput, normalizeBili, biliScreens, normalizeDamai, normalizeDamaiTickets, validateSelection, maskId } from "../src/services/platforms.js";
+import { projectId, timestamp, beijingInput, normalizeBili, biliScreens, normalizeDamai, normalizeDamaiTickets, normalizeMotianlun, normalizeMotianlunTickets, validateSelection, maskId } from "../src/services/platforms.js";
 
 test("project links only accept the selected platform and exact query keys", () => {
     assert.equal(projectId("https://m.damai.cn/damai/detail/item.html?itemId=123&spm=x", "dm"), "123");
@@ -9,6 +9,30 @@ test("project links only accept the selected platform and exact query keys", () 
     assert.equal(projectId("https://bilibili.com.example.org/?id=123", "bilibili"), "");
     assert.equal(projectId("https://m.damai.cn/?itemId=123", "bilibili"), "");
     assert.equal(projectId(" 123456 ", "dm"), "123456");
+    assert.equal(projectId("69FB10C1B0BCC10001A27774", "motianlun"), "69fb10c1b0bcc10001a27774");
+    assert.equal(projectId("https://www.motianlun.cn/content/69fb10c1b0bcc10001a27774", "motianlun"), "69fb10c1b0bcc10001a27774");
+    assert.equal(projectId("https://m-mtl-global.moretickets.com/tourDetail?showId=69fb10c1b0bcc10001a27774", "motianlun"), "69fb10c1b0bcc10001a27774");
+    assert.equal(projectId("https://www.moretickets.com/show-detail?showId=69fb10c1b0bcc10001a27774", "motianlun"), "69fb10c1b0bcc10001a27774");
+    assert.equal(projectId("https://example.com/content/69fb10c1b0bcc10001a27774", "motianlun"), "");
+    assert.equal(projectId("https://m.damai.cn/?itemId=123", "motianlun"), "");
+});
+
+test("Motianlun sessions and inventory keep stock and price", () => {
+    const project = normalizeMotianlun({
+        note: "已加载",
+        show: { id: "69fb10c1b0bcc10001a27774", showName: "演出", cityName: "香港", venueName: "主场馆", posterUrl: "http://img.example/a.png" },
+        sessions: [{ sessionId: "6a016a61bb59430001084250", sessionName: "周五场", sessionStatus: "ONSALE", hasTicket: true, purchaseLimit: 4 }],
+    }, "69fb10c1b0bcc10001a27774");
+    assert.equal(project.name, "演出");
+    assert.equal(project.image.startsWith("https:"), true);
+    assert.equal(project.screens[0].disabled, false);
+    assert.equal(project.screens[0].limit, 4);
+    const tickets = normalizeMotianlunTickets([{ inventoryId: "6ae3a9835983470001717b08", originPrice: "2000", currencySymbol: "HK$", stock: 2, mtsCategoryName: "内场", rowName: "B行" }], 4);
+    assert.equal(tickets[0].price, 200000);
+    assert.equal(tickets[0].currency, "HK$");
+    assert.equal(tickets[0].limit, 2);
+    assert.equal(tickets[0].disabled, false);
+    assert.equal(normalizeMotianlunTickets([{ inventoryId: "6ae44b6fc5ca3d0001dbfc07", originPrice: "10", stock: 0 }])[0].disabled, true);
 });
 
 test("sale times use Beijing timezone, independent of the system timezone", () => {

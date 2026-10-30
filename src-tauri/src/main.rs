@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::Manager;
-use tickets::{bilibili, clock, dm, notifications, subscriptions, tasks, utils, version};
+use tickets::{
+    bilibili, clock, dm, motianlun, notifications, subscriptions, tasks, utils, version,
+};
 
 fn main() {
     tauri::Builder::default()
@@ -27,6 +29,9 @@ fn main() {
             bilibili::bili_buyers,
             bilibili::bili_addresses,
             bilibili::bili_screens,
+            motianlun::mtl_project,
+            motianlun::mtl_tickets,
+            motianlun::mtl_buyers,
             tasks::start_ticket_task,
             notifications::test_wechat_notification,
             notifications::get_wechat_status,

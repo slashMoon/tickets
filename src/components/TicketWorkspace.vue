@@ -5,7 +5,7 @@ import UiIcon from "./common/UiIcon.vue";
 import BiliProjectSearch from "./BiliProjectSearch.vue";
 import MonitorControls from "./MonitorControls.vue";
 import TaskStatus from "./TaskStatus.vue";
-import { platforms, projectId, normalizeBili, normalizeDamai, normalizeDamaiTickets, biliScreens, maskId, money, timestamp, beijingInput, validateSelection } from "../services/platforms";
+import { platforms, projectId, normalizeBili, normalizeDamai, normalizeDamaiTickets, normalizeMotianlun, normalizeMotianlunTickets, biliScreens, maskId, money, timestamp, beijingInput, validateSelection } from "../services/platforms";
 import { runtime, readLocal, saveLocal, call, record, currentTask, isActive, startTask, syncClock, openExternal, errorText } from "../services/runtime";
 import { damaiCredentials } from "../services/credentials";
 import { cleanAccountDraft, resolveAccount } from "../services/accounts";
@@ -17,6 +17,7 @@ const emit = defineEmits(["created", "busy"]);
 const monitoring = computed(() => props.monitoring);
 const meta = platforms[props.platform];
 const isBili = props.platform === "bilibili";
+const isMtl = props.platform === "motianlun";
 const draftKey = `tickets.${props.monitoring ? "monitor-draft" : "draft"}.${props.platform}`;
 const saved = cleanAccountDraft(readLocal(draftKey, {}));
 const form = reactive({
@@ -95,9 +96,9 @@ async function loadProject() {
     project.value = null; screenId.value = ""; ticketId.value = ""; buyers.value = []; addresses.value = [];
     form.buyers = []; form.address = ""; form.date = "";
     try {
-        const raw = await call(isBili ? "bili_project" : "dm_project", { account: credentials, projectId: isBili ? Number(projectNumber) : projectNumber, ...(!isBili ? { allowUnavailable: monitoring.value } : {}) });
+        const raw = await call(isBili ? "bili_project" : isMtl ? "mtl_project" : "dm_project", { account: credentials, projectId: isBili ? Number(projectNumber) : projectNumber, ...(!isBili && !isMtl ? { allowUnavailable: monitoring.value } : {}) });
         if (version !== generation) return;
-        project.value = isBili ? normalizeBili(raw, projectNumber) : normalizeDamai(raw, projectNumber);
+        project.value = isBili ? normalizeBili(raw, projectNumber) : isMtl ? normalizeMotianlun(raw, projectNumber) : normalizeDamai(raw, projectNumber);
         loadedAccount = JSON.stringify(credentials);
         if (project.value.saleStart > Date.now() + form.offsetMs) {
             form.startAt = beijingInput(project.value.saleStart); form.scheduled = true;
@@ -122,13 +123,13 @@ async function loadBuyers(version = generation) {
     if (!project.value || locked.value) return;
     buyerLoading.value = true; buyerError.value = ""; form.buyers = [];
     try {
-        const raw = await call(isBili ? "bili_buyers" : "dm_buyers", { account: account(), ...(isBili ? { projectId: Number(project.value.id) } : {}) });
+        const raw = await call(isBili ? "bili_buyers" : isMtl ? "mtl_buyers" : "dm_buyers", { account: account(), ...(isBili ? { projectId: Number(project.value.id) } : {}) });
         if (version !== generation) return;
         if (!Array.isArray(raw)) throw new Error("观演人数据格式无效");
         buyers.value = raw.map(item => ({
-            key: String(isBili ? item.id : item.maskedIdentityNo),
-            name: isBili ? item.name : item.maskedName,
-            identity: isBili ? maskId(item.personal_id) : item.maskedIdentityNo,
+            key: String(isBili || isMtl ? item.id : item.maskedIdentityNo),
+            name: isBili || isMtl ? item.name : item.maskedName,
+            identity: isBili ? maskId(item.personal_id) : isMtl ? maskId(item.identityNumber || item.idNo) : item.maskedIdentityNo,
             raw: item,
         }));
         if (!raw.length) buyerError.value = "尚无观演人，请先在官方平台添加实名信息，再点击刷新。";
@@ -155,9 +156,9 @@ async function selectScreen(item) {
     ticketLoading.value = true; error.value = "";
     const version = generation;
     try {
-        const raw = await call("dm_tickets", { account: account(), projectId: project.value.id, screenId: item.id });
+        const raw = await call(isMtl ? "mtl_tickets" : "dm_tickets", { account: account(), projectId: project.value.id, screenId: item.id });
         if (version !== generation) return;
-        item.tickets = normalizeDamaiTickets(raw);
+        item.tickets = isMtl ? normalizeMotianlunTickets(raw, item.limit) : normalizeDamaiTickets(raw);
     } catch (value) { if (version === generation) fail(value, "票档加载失败"); }
     finally { ticketLoading.value = false; }
 }
@@ -224,7 +225,7 @@ async function start() {
     const wechat = normalizeWechat(runtime.settings.wechat);
     starting.value = true; error.value = "";
     try {
-        if (!isBili) await damaiCredentials();
+        if (!isBili && !isMtl) await damaiCredentials();
         if (runtime.settings.autoSync && (!runtime.clock || Date.now() - runtime.clock.sampledAt > 300_000)) await calibrate();
         const common = { account: account(), projectId: project.value.id, skuId: ticket.value.id, count: form.count, wechat };
         const config = isBili ? {
@@ -232,7 +233,8 @@ async function start() {
             unitPrice: ticket.value.price, buyers: buyers.value.filter(item => form.buyers.includes(item.key)).map(item => item.raw),
             buyer: form.buyer.trim(), tel: form.tel.trim(), requiresDelivery: needsDelivery.value, date: form.date,
             deliverInfo: address ? { name: address.name, tel: address.phone, addr_id: address.id, addr: `${address.prov || ''}${address.city || ''}${address.area || ''}${address.addr || ''}` } : {},
-        } : { ...common, signKey: ticket.value.signKey, buyers: [...form.buyers] };
+        } : isMtl ? { ...common, screenId: screen.value.id, buyers: [...form.buyers], listing: ticket.value.listing || {} }
+            : { ...common, signKey: ticket.value.signKey, buyers: [...form.buyers] };
         await startTask({
             id: `${props.platform}-${crypto.randomUUID()}`, platform: props.platform,
             title: `${project.value.name} · ${screen.value.name} · ${ticket.value.name}`,
@@ -274,8 +276,8 @@ async function start() {
                     </template>
                     <form v-else @submit.prevent="loadProject" class="stack-form">
                         <label class="field-label" :for="`${platform}-url`">活动链接或编号 <span>*</span></label>
-                        <input :id="`${platform}-url`" v-model="form.url" :disabled="locked || loading" class="text-input" :placeholder="isBili ? '粘贴会员购链接或项目 ID' : '粘贴大麦链接或 itemId'" autocomplete="off" />
-                        <small class="field-hint" :class="{ 'accent-text': id }">{{ id ? `已识别项目 ${id}` : '自动识别官方商品链接中的项目编号' }}</small>
+                        <input :id="`${platform}-url`" v-model="form.url" :disabled="locked || loading" class="text-input" :placeholder="isMtl ? '粘贴摩天轮 / MoreTickets 链接或 showId' : '粘贴大麦链接或 itemId'" autocomplete="off" />
+                        <small class="field-hint" :class="{ 'accent-text': id }">{{ id ? `已识别项目 ${id}` : (isMtl ? meta.linkHint : '自动识别官方商品链接中的项目编号') }}</small>
                         <div class="label-row"><label class="field-label" :for="`${platform}-account`">使用账号 <span>*</span></label><router-link to="/settings" class="text-button">管理账号</router-link></div>
                         <select :id="`${platform}-account`" class="text-input" :value="selectedAccount?.id || ''" @change="form.accountId = $event.target.value" :disabled="locked || loading || ticketLoading">
                             <option value="" disabled>{{ accounts.length ? '请选择账号' : '请先添加账号' }}</option>
@@ -286,7 +288,7 @@ async function start() {
                         <label class="check-label proxy-row"><input type="checkbox" v-model="form.useProxy" :disabled="locked || loading" />使用全局代理 <router-link to="/settings">设置<UiIcon name="chevron" /></router-link></label>
                         <button class="button primary full" :disabled="locked || loading || !runtime.ready" type="submit"><UiIcon :name="loading ? 'refresh' : 'search'" :class="{ spinning: loading }" />{{ loading ? '正在加载活动…' : project ? '重新加载活动' : '加载活动' }}</button>
                     </form>
-                    <button v-if="!isBili" class="connection-help text-button" @click="openExternal(meta.home)">打开大麦官网<UiIcon name="launch" /></button>
+                    <button v-if="!isBili" class="connection-help text-button" @click="openExternal(meta.home)">打开{{ meta.name }}官网<UiIcon name="launch" /></button>
                 </section>
                 <section v-if="!isBili" class="panel clock-panel"><div class="compact-heading"><UiIcon name="clock" /><h3>时间校准</h3><span class="tiny-label" v-if="runtime.clock">已同步</span></div><p>同步公共服务器时间，让预约更准确。</p><div class="clock-number">{{ form.offsetMs > 0 ? '+' : '' }}{{ form.offsetMs || 0 }}<span>ms</span></div><small v-if="runtime.clock">{{ runtime.clock.source }} · 往返 {{ runtime.clock.roundTripMs }} ms<br />估计误差 ±{{ runtime.clock.uncertaintyMs }} ms</small><small v-else>尚未同步 · 当前使用本机时间</small><button class="button secondary full small" :disabled="runtime.syncing || locked" @click="calibrate"><UiIcon name="refresh" :class="{ spinning: runtime.syncing }" />{{ runtime.syncing ? '正在校准…' : '同步服务器时间' }}</button><p v-if="clockError" class="inline-error" role="alert">{{ clockError }}</p></section>
                 <TaskStatus v-if="!monitoring && task" :task="task" />
@@ -297,13 +299,13 @@ async function start() {
                     <h2>{{ loading ? '正在寻找你的下一场期待…' : '你的下一场，在哪里？' }}</h2><p>{{ isBili ? '搜索并选择活动，或填写左侧的活动链接与账号信息，' : '填写左侧的活动链接与账号信息，' }}<br />加载活动后，即可选择场次、票档与观演人。</p><div class="empty-features"><span><UiIcon name="calendar" />定时预约</span><span><UiIcon name="user" />实名观演</span><span><UiIcon name="activity" />实时进度</span></div>
                 </section>
                 <template v-if="project">
-                    <section class="panel event-panel"><div v-if="!isBili" class="event-summary"><img v-if="project.image" :src="project.image" class="event-cover" alt="活动海报" referrerpolicy="no-referrer" @error="project.image = ''" /><div v-else class="event-cover placeholder-cover"><UiIcon name="ticket" /></div><div class="event-summary-text"><span class="pill">{{ meta.name }}{{ isBili ? ' 会员购' : ' 官方活动' }}</span><h2>{{ project.name }}</h2><p v-if="project.venue"><UiIcon name="location" />{{ project.venue }}</p><small>项目编号 {{ project.id }}</small></div></div>
+                    <section class="panel event-panel"><p v-if="project.note" class="field-hint">{{ project.note }}</p><div v-if="!isBili" class="event-summary"><img v-if="project.image" :src="project.image" class="event-cover" alt="活动海报" referrerpolicy="no-referrer" @error="project.image = ''" /><div v-else class="event-cover placeholder-cover"><UiIcon name="ticket" /></div><div class="event-summary-text"><span class="pill">{{ meta.name }}{{ isBili ? ' 会员购' : ' 官方活动' }}</span><h2>{{ project.name }}</h2><p v-if="project.venue"><UiIcon name="location" />{{ project.venue }}</p><small>项目编号 {{ project.id }}</small></div></div>
                         <div v-if="!isBili" class="section-rule"></div>
                         <div class="section-heading"><span class="section-icon"><UiIcon name="calendar" /></span><div><h2>选择场次与票档</h2><p v-if="!isBili">选择你想去的那一场</p></div><span class="tiny-label">02</span></div>
                         <div v-if="project.dates.length" class="field"><label class="field-label" :for="`${platform}-date`">活动日期</label><select :id="`${platform}-date`" class="text-input" v-model="form.date" @change="changeDate" :disabled="locked || ticketLoading"><option value="" disabled>选择日期</option><option v-for="date in project.dates" :value="date" :key="date">{{ date }}</option></select></div>
                         <div class="field-label">场次</div><div class="option-grid"><button v-for="item in project.screens" :key="item.id" class="option-card" :class="{ chosen: screenId === item.id, unavailable: item.disabled }" :aria-pressed="screenId === item.id" :disabled="locked || ticketLoading || (!monitoring && item.disabled)" :title="item.disabledReason" @click="selectScreen(item)"><span>{{ item.name }}</span><small v-if="item.status">{{ item.status }}</small><UiIcon v-if="screenId === item.id" name="check" /></button></div>
                         <p v-if="!project.screens.length" class="field-hint">{{ project.dates.length ? '请选择活动日期以加载场次' : '暂无可选场次，请稍后重新加载' }}</p>
-                        <template v-if="screen"><div class="field-label space-top">票档 <span v-if="ticketLoading" class="muted-text">加载中…</span></div><div class="option-grid ticket-options"><button v-for="item in screen.tickets" :key="item.id" :aria-pressed="ticketId === item.id" class="option-card" :class="{ chosen: ticketId === item.id, unavailable: screen.disabled || item.disabled }" :disabled="locked || ticketLoading || (!monitoring && (screen.disabled || item.disabled))" :title="screen.disabledReason || item.disabledReason" @click="selectTicket(item)"><span>{{ item.name }}</span><strong>¥ {{ money(item.price) }}</strong><small v-if="item.status">{{ item.status }}</small><UiIcon v-if="ticketId === item.id" name="check" /></button></div><p v-if="!ticketLoading && !screen.tickets.length" class="field-hint">暂无票档，可以重新选择场次刷新。</p><p v-if="screen.deliveryFee" class="field-hint">以上价格已包含配送费 ¥{{ money(screen.deliveryFee) }} / 张。</p><p v-if="screen.requiresSeat" class="inline-error">该场次需要选座，请前往官方页面购票。</p></template>
+                        <template v-if="screen"><div class="field-label space-top">票档 <span v-if="ticketLoading" class="muted-text">加载中…</span></div><div class="option-grid ticket-options"><button v-for="item in screen.tickets" :key="item.id" :aria-pressed="ticketId === item.id" class="option-card" :class="{ chosen: ticketId === item.id, unavailable: screen.disabled || item.disabled }" :disabled="locked || ticketLoading || (!monitoring && (screen.disabled || item.disabled))" :title="screen.disabledReason || item.disabledReason" @click="selectTicket(item)"><span>{{ item.name }}</span><strong>{{ item.currency || '¥' }} {{ money(item.price) }}</strong><small v-if="item.status">{{ item.status }}</small><UiIcon v-if="ticketId === item.id" name="check" /></button></div><p v-if="!ticketLoading && !screen.tickets.length" class="field-hint">暂无票档，可以重新选择场次刷新。</p><p v-if="screen.deliveryFee" class="field-hint">以上价格已包含配送费 ¥{{ money(screen.deliveryFee) }} / 张。</p><p v-if="screen.requiresSeat" class="inline-error">该场次需要选座，请前往官方页面购票。</p></template>
                     </section>
                     <MonitorControls v-if="monitoring" v-show="!isBili || ticket" :platform="platform" :locked="locked" :ready="!!ticket && !ticketLoading" @start="startMonitor" />
                     <section v-else v-show="!isBili || ticket" class="panel purchase-panel"><div class="section-heading"><span class="section-icon"><UiIcon name="user" /></span><div><h2>确认购票信息</h2><p v-if="!isBili">准备好，就出发</p></div><span class="tiny-label">03</span></div>
@@ -318,7 +320,7 @@ async function start() {
                         <div class="three-fields space-top"><div class="field"><label class="field-label" :for="`${platform}-attempts`">最多尝试 / 次</label><input :id="`${platform}-attempts`" class="text-input" type="number" v-model.number="form.maxAttempts" min="1" max="100" :disabled="locked" /></div><div class="field"><label class="field-label" :for="`${platform}-interval`">重试间隔 / ms</label><input :id="`${platform}-interval`" class="text-input" type="number" v-model.number="form.intervalMs" min="300" max="60000" step="100" :disabled="locked" /></div><div class="field"><label class="field-label" :for="`${platform}-offset`">修正时间 / ms</label><input :id="`${platform}-offset`" class="text-input" type="number" v-model.number="form.offsetMs" min="-86400000" max="86400000" :disabled="locked" /></div></div>
                         <p class="field-hint">修正值 = 服务器时间 − 本机时间。任务开始后可切换平台，请保持电脑唤醒。</p>
                         <p class="field-hint">{{ runtime.settings.wechat.enabled ? '已启用微信提醒：订单创建成功后发送待支付通知。新任务使用启动时已保存的通知设置。' : '当前仅在应用内提醒。可在设置中启用微信购票与余票提醒。' }} <router-link to="/settings">通知设置 →</router-link></p>
-                        <div class="purchase-footer"><div><small>预计总额</small><strong><span>¥</span> {{ money((ticket?.price || 0) * form.count) }}</strong></div><button class="button primary" :disabled="locked || !ticket || screen?.disabled || ticket.disabled || !runtime.ready || ticketLoading" @click="start"><UiIcon :name="starting ? 'refresh' : 'play'" :class="{ spinning: starting }" />{{ starting ? '正在准备…' : running ? '任务进行中' : form.scheduled ? '创建预约任务' : '开始购票' }}</button></div><small class="field-hint">创建订单后请在官方页面及时支付。</small>
+                        <div class="purchase-footer"><div><small>预计总额</small><strong><span>{{ ticket?.currency || '¥' }}</span> {{ money((ticket?.price || 0) * form.count) }}</strong></div><button class="button primary" :disabled="locked || !ticket || screen?.disabled || ticket.disabled || !runtime.ready || ticketLoading" @click="start"><UiIcon :name="starting ? 'refresh' : 'play'" :class="{ spinning: starting }" />{{ starting ? '正在准备…' : running ? '任务进行中' : form.scheduled ? '创建预约任务' : '开始购票' }}</button></div><small class="field-hint">创建订单后请在官方页面及时支付。</small>
                     </section>
                 </template>
             </div>
