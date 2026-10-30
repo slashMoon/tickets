@@ -6,6 +6,7 @@ pub mod bilibili;
 pub mod clock;
 pub mod dm;
 pub mod http;
+pub mod motianlun;
 pub mod tasks;
 
 pub mod monitor;

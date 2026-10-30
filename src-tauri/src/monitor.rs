@@ -1,6 +1,7 @@
 use crate::{
     bilibili, clock, dm,
     http::{self, first, string, Account},
+    motianlun,
     notifications::WechatConfig,
     tasks::{Outcome, TaskContext},
 };
@@ -25,14 +26,17 @@ pub struct Config {
 
 pub fn validate(value: &Value, platform: &str) -> Result<(), String> {
     let config: Config = serde_json::from_value(value.clone()).map_err(|_| "余票监控配置不完整")?;
-    if !matches!(platform, "dm" | "bilibili") {
+    if !matches!(platform, "dm" | "bilibili" | "motianlun") {
         return Err("不支持的监控平台".into());
     }
     for id in [&config.project_id, &config.screen_id, &config.sku_id] {
-        if !id
-            .parse::<u64>()
-            .is_ok_and(|id| id > 0 && id <= 9_007_199_254_740_991)
-        {
+        let valid = if platform == "motianlun" {
+            id.len() == 24 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        } else {
+            id.parse::<u64>()
+                .is_ok_and(|id| id > 0 && id <= 9_007_199_254_740_991)
+        };
+        if !valid {
             return Err("请选择有效的活动、场次和票档".into());
         }
     }
@@ -41,14 +45,17 @@ pub fn validate(value: &Value, platform: &str) -> Result<(), String> {
     }
     http::client(
         &config.account,
-        if platform == "dm" {
-            "https://m.damai.cn"
-        } else {
-            "https://show.bilibili.com"
+        match platform {
+            "dm" => "https://m.damai.cn",
+            "motianlun" => "https://www.moretickets.com",
+            _ => "https://show.bilibili.com",
         },
     )?;
     if platform == "dm" && http::cookie_value(&config.account.cookie, "_m_h5_tk").is_empty() {
         return Err("大麦 Cookie 缺少 _m_h5_tk，请重新获取".into());
+    }
+    if platform == "motianlun" && motianlun::access_token(&config.account.cookie).is_empty() {
+        return Err("摩天轮 Cookie 缺少 access_token，请重新获取".into());
     }
     config.wechat.validate()
 }
@@ -223,6 +230,20 @@ async fn query(config: &Config, platform: &str, offset_ms: i64) -> Result<Availa
         )
         .await?;
         damai_availability(&raw, &config.sku_id)
+    } else if platform == "motianlun" {
+        let raw = motianlun::mtl_tickets(
+            config.account.clone(),
+            config.project_id.clone(),
+            config.screen_id.clone(),
+        )
+        .await?;
+        Ok(
+            match motianlun::inventory_availability(&raw, &config.sku_id)? {
+                motianlun::Availability::Available => Availability::Available,
+                motianlun::Availability::Unavailable => Availability::Unavailable,
+                motianlun::Availability::Unknown => Availability::Unknown,
+            },
+        )
     } else {
         let id = config
             .project_id
@@ -304,6 +325,8 @@ where
 pub fn project_url(platform: &str, project_id: &str) -> String {
     if platform == "dm" {
         format!("https://m.damai.cn/damai/detail/item.html?itemId={project_id}")
+    } else if platform == "motianlun" {
+        motianlun::project_url(project_id)
     } else {
         format!("https://show.bilibili.com/platform/detail.html?id={project_id}")
     }

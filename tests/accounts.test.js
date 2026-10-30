@@ -35,6 +35,9 @@ test("account validation rejects control characters without revealing credential
     const state = upsertAccount(emptyAccounts(), dm("test"), () => "one");
     assert.throws(() => upsertAccount(state, { ...dm("test"), id: "removed" }), /删除/);
     assert.throws(() => upsertAccount(state, { ...dm("test"), id: "one", platform: "bilibili" }), /更换平台/);
+    assert.throws(() => upsertAccount(emptyAccounts(), { platform: "motianlun", name: "轮", cookie: "SESSION=only" }), /access_token/);
+    const motianlun = upsertAccount(emptyAccounts(), { platform: "motianlun", name: "轮", cookie: "access_token=web-token; tsessionid=sid" }, () => "mtl");
+    assert.equal(resolveAccount(motianlun, "motianlun").id, "mtl");
 });
 
 test("legacy saved cookies migrate once, deduplicate and keep account references in drafts", () => {

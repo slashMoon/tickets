@@ -4,7 +4,7 @@ import TicketWorkspace from "../components/TicketWorkspace.vue";
 import TaskStatus from "../components/TaskStatus.vue";
 import UiIcon from "../components/common/UiIcon.vue";
 import { monitorTasks, activeMonitors, isActive, runtime } from "../services/runtime";
-import { platforms, formatTime } from "../services/platforms";
+import { platforms, platformFilters, formatTime } from "../services/platforms";
 
 const creating = ref(monitorTasks.value.length === 0);
 const platform = ref("dm");
@@ -28,7 +28,7 @@ function created() { creating.value = false; busy.value = false; filter.value = 
         </div>
 
         <div class="monitor-list-heading"><h2>监控列表</h2><label class="check-label"><input type="checkbox" v-model="activeOnly" />仅显示运行中</label></div>
-        <div class="segmented-control" aria-label="筛选监控平台"><button v-for="item in [{ id: 'all', name: '全部平台' }, { id: 'dm', name: '大麦' }, { id: 'bilibili', name: 'Bilibili' }]" :key="item.id" :class="{ selected: filter === item.id }" @click="filter = item.id">{{ item.name }}</button></div>
+        <div class="segmented-control" aria-label="筛选监控平台"><button v-for="item in platformFilters" :key="item.id" :class="{ selected: filter === item.id }" @click="filter = item.id">{{ item.name }}</button></div>
         <div v-if="visible.length" class="task-grid">
             <article v-for="task in visible" :key="task.id" class="panel task-card">
                 <div class="task-card-title"><span class="pill">{{ platforms[task.platform]?.name }}</span><small>更新于 {{ formatTime(task.updatedAt) }}</small></div>
@@ -37,7 +37,7 @@ function created() { creating.value = false; busy.value = false; filter.value = 
                 <TaskStatus :task="task" />
             </article>
         </div>
-        <section v-else class="panel empty-inline"><span class="empty-icon"><UiIcon name="search" /></span><h2>{{ monitorTasks.length ? '没有符合筛选条件的监控' : '还没有监控任务' }}</h2><p>{{ monitorTasks.length ? '调整平台或运行状态筛选，查看其他监控。' : '添加大麦或会员购的活动和票档，发现可购票时及时提醒。' }}</p><button v-if="!creating" class="button secondary" @click="creating = true">新增监控<UiIcon name="arrow" /></button></section>
+        <section v-else class="panel empty-inline"><span class="empty-icon"><UiIcon name="search" /></span><h2>{{ monitorTasks.length ? '没有符合筛选条件的监控' : '还没有监控任务' }}</h2><p>{{ monitorTasks.length ? '调整平台或运行状态筛选，查看其他监控。' : '添加活动和票档，发现可购票时及时提醒。' }}</p><button v-if="!creating" class="button secondary" @click="creating = true">新增监控<UiIcon name="arrow" /></button></section>
     </div>
 </template>
 

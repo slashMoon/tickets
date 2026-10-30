@@ -64,6 +64,7 @@ h3 { font-size: 14px; font-weight: 650; }
 .nav-item small { display: block; font-size: 10px; font-weight: 400; margin-top: 4px; color: var(--muted); }
 .nav-item.selected { color: var(--accent); background: var(--accent-soft); font-weight: 650; }
 .nav-item.selected.pink { color: var(--bili-accent); background: var(--bili-accent-soft); }
+.nav-item.selected.amber { color: var(--warning); background: var(--accent-soft); }
 .nav-chevron { width: 12px; height: 12px; opacity: .4; }
 .nav-divider { height: 1px; background: var(--border); margin: 24px 12px 18px; }
 .nav-count { font-size: 10px; border-radius: 5px; padding: 3px 6px; background: var(--accent-tint); color: var(--accent); }
